@@ -1,0 +1,129 @@
+---
+title: "Predict Excercise Type"
+author: "Bishnu Poudel"
+date: "May 18, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning=FALSE)
+```
+
+### Executive Summary
+The goal of our project is to predict the manner in which the subjects did their exercise. This is the "classe" variable in the training set. We use only the readings from the machines to predict our outcome, and we ignore other manufactured variables. I've created a report describing how I built the models. I used cross validation set (named 'testing' in the report) from the the training data itself. We will also use our best prediction model to predict 20 different test cases.
+
+### Read the raw datasets
+```{r read datasets}
+rawtraining<- read.csv("training.csv")
+rawtesting<- read.csv("testing.csv")
+```
+
+
+### check if any of the dependent variable is missing or is na
+
+```{r}
+any(is.na(rawtraining$classe)); any( trimws( rawtraining$classe)=='')
+```
+
+However, we've quite some missing values and NAs in the other variables. We will remove all such fields.
+
+#### Columns with missing data in them.
+
+```{r}
+library(DataExplorer)
+data.frame( profile_missing(rawtraining) )[data.frame( profile_missing(rawtraining) )$num_missing>0, ]
+```
+
+**Remove any columns that are empty or are NA**
+
+```{r}
+nonempty<- data.frame( apply(rawtraining, 2,  function(c) { any(is.na(c)) | any(c=='')}) )
+nonempty$fieldname<- row.names(nonempty);row.names(nonempty)<- NULL
+names(nonempty)[1]<- "FLAG"
+#list of non empty columns in a dataset
+nonEmptyTraining<- rawtraining[, colnames(rawtraining) %in% nonempty[!nonempty$FLAG,]$fieldname ]
+```
+
+#### We are now left with 60 variables only
+However, looking at the documentation, we can infer that
+ only the acceleration, gyroscope and magnet readings are
+ fundamental. We use only those variables to build our models.
+ We will end up with 36 independant and the one dependant variable.
+ 
+ *We completey ignored any fields with a missing value*
+ *This makes sense as they are bad data*
+ *Additionally, we do have none of the data missing for the acceleration, gyroscope and magnet measurements*
+
+```{r}
+xyz<- grep("^acc.+|^gyr.+|^mag.+", names(nonEmptyTraining), value=T)
+trainingset<- nonEmptyTraining[, names(nonEmptyTraining) %in% xyz | names(nonEmptyTraining)=="classe" ]
+
+```
+
+*Now we will treat this 'trainingset' data as the training data and cross validation data. Note that cross validation data is named testing in the exercises that follow.*
+
+
+### Perform Multinomial logistic regression first 
+
+
+```{r Multinomial logistic regression}
+sample<-createDataPartition(trainingset$classe, p=0.5, list=FALSE)
+training<- trainingset[sample,]
+testing<- trainingset[-sample,]
+modLR<- train( classe~. , data=training , method="multinom", trace=FALSE, trControl=trainControl(method="cv", number=5) , preProcess = c("center", "scale"))
+
+#Prediction part
+predLR<- predict(modLR, newdata= testing )
+tableLR<-table(predLR, testing$classe)
+tableLR
+sum(diag(tableLR))/ sum(tableLR) #accuracy
+```
+
+### Perform random forest with 30% of the data. More data could not be put into the training set due to memory constraints.
+
+#### For 10% first
+
+```{r}
+sample<-createDataPartition(trainingset$classe, p=0.1, list=FALSE)
+training<- trainingset[sample,]
+testing<- trainingset[-sample,]
+ modRf<- train( classe~ . , data=training , method="rf")
+ predRf<- predict(modRf, newdata= testing )
+ tableRf<-table(predRf, testing$classe)
+ tableRf
+ sum(diag(tableRf))/ sum(tableRf) #accuracy
+```
+
+#### For 25% 
+
+*Due to memory constraints, we could only use 25% of the data to create the model*
+
+```{r}
+sample<-createDataPartition(trainingset$classe, p=0.25, list=FALSE)
+training<- trainingset[sample,]
+testing<- trainingset[-sample,]
+ modRf<- train( classe~ . , data=training , method="rf")
+ predRf<- predict(modRf, newdata= testing )
+ tableRf<-table(predRf, testing$classe)
+ tableRf
+ sum(diag(tableRf))/ sum(tableRf) #accuracy
+```
+
+
+
+#### Boosting could be done only for 6% of the data provided due to memory constraints on my machine. 
+
+```{r}
+ sample<-createDataPartition(trainingset$classe, p=0.05, list=FALSE)
+training<- trainingset[sample,]
+testing<- trainingset[-sample,]
+ modBo<- train(classe~., method="gbm", data=training, verbose=F)
+ predBo<- predict( modBo, newdata=testing)
+ tableBo<-table(predBo , testing$classe)
+ tableBo
+ sum(diag(tableBo ))/ sum(tableBo )
+```
+
+
+### Conclusion:
+Random Forest gives the most accurate form of Prediction in our case. We used just the fundamental measurement varibales to build our model. It gives above 95% accuracy in the cross validation set. We will check its accuracy with the 20 test cases as well.
